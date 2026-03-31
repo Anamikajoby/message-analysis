@@ -38,26 +38,42 @@ interface Detection {
 
 // --- Gemini Service ---
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+function extractJson(text: string) {
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  return jsonMatch ? jsonMatch[0] : text;
+}
 
 async function analyzeMessage(message: string, contacts?: string): Promise<AnalysisResult> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
+    throw new Error("GEMINI_API_KEY is missing or invalid. Please configure it in the Secrets panel.");
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
+
   const prompt = `
-    Analyze the following message and determine whether it is SAFE or a PHISHING attempt.
-    Be neutral and unbiased. Do NOT assume the message is phishing. Only classify as "Suspicious" if there are clear signs.
+    Analyze the following content and determine if it is a SAFE message, a PHISHING attempt, or GIBBERISH/NON-MESSAGE content.
     
     User Context:
     Known Contacts: ${contacts || "None provided"}
     
-    Message:
+    Content to Analyze:
+    """
     ${message}
+    """
     
-    Return output strictly in JSON:
+    Guidelines:
+    1. If the content is gibberish, random characters, or clearly not a message/email, return a low riskScore (0-10) and verdict "Safe", and explicitly state "Non-message content detected" in the reasons.
+    2. If it is a message, analyze for phishing signals (urgency, suspicious links, sender mismatch).
+    3. Be neutral and unbiased.
+    
+    Return output strictly in JSON format:
     {
       "riskScore": number (0-100),
       "verdict": "Safe" or "Suspicious",
       "reasons": ["reason1", "reason2"],
-      "warning": "Explain clearly why this is safe or suspicious for this specific user",
-      "insight": "A short, technical insight about the pattern detected (e.g., 'Whaling', 'Credential Harvesting', etc.)"
+      "warning": "Clear explanation for the user",
+      "insight": "Technical pattern name (e.g., 'Gibberish Detected', 'Whaling', etc.)"
     }
   `;
 
@@ -67,23 +83,15 @@ async function analyzeMessage(message: string, contacts?: string): Promise<Analy
       contents: prompt,
       config: {
         responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            riskScore: { type: Type.NUMBER },
-            verdict: { type: Type.STRING },
-            reasons: { type: Type.ARRAY, items: { type: Type.STRING } },
-            warning: { type: Type.STRING },
-            insight: { type: Type.STRING }
-          },
-          required: ["riskScore", "verdict", "reasons", "warning"]
-        }
       }
     });
 
-    return JSON.parse(response.text);
+    const text = response.text;
+    if (!text) throw new Error("Empty response from AI");
+    
+    return JSON.parse(extractJson(text));
   } catch (error) {
-    console.error("Analysis failed:", error);
+    console.error("Detailed Analysis Error:", error);
     throw error;
   }
 }
@@ -120,7 +128,8 @@ export default function App() {
       };
       setRecentDetections(prev => [newDetection, ...prev.slice(0, 2)]);
     } catch (error) {
-      alert("Analysis failed. Please check console for details.");
+      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
+      alert(`Analysis failed: ${errorMessage}`);
     } finally {
       setIsAnalyzing(false);
     }
