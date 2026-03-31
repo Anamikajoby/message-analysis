@@ -26,6 +26,7 @@ interface AnalysisResult {
   verdict: "Safe" | "Suspicious";
   reasons: string[];
   warning: string;
+  riskDescription: string;
   insight?: string;
 }
 
@@ -50,6 +51,7 @@ async function analyzeMessage(message: string, contacts?: string): Promise<Analy
       verdict: "Suspicious",
       reasons: ["API Key missing. Please configure GEMINI_API_KEY in your environment."],
       warning: "Analysis is currently unavailable because the Gemini API key is not configured.",
+      riskDescription: "The system requires a valid API key to perform neural analysis.",
       insight: "Configuration Error"
     };
   }
@@ -70,7 +72,8 @@ async function analyzeMessage(message: string, contacts?: string): Promise<Analy
       "riskScore": number (0-100),
       "verdict": "Safe" or "Suspicious",
       "reasons": ["reason1", "reason2"],
-      "warning": "Explain clearly why this is safe or suspicious for this specific user",
+      "warning": "A short, high-level warning message",
+      "riskDescription": "A detailed explanation of the specific risks found in this message, explaining the 'why' behind the assessment.",
       "insight": "A short, technical insight about the pattern detected (e.g., 'Whaling', 'Credential Harvesting', etc.)"
     }
   `;
@@ -88,9 +91,10 @@ async function analyzeMessage(message: string, contacts?: string): Promise<Analy
             verdict: { type: Type.STRING },
             reasons: { type: Type.ARRAY, items: { type: Type.STRING } },
             warning: { type: Type.STRING },
+            riskDescription: { type: Type.STRING },
             insight: { type: Type.STRING }
           },
-          required: ["riskScore", "verdict", "reasons", "warning"]
+          required: ["riskScore", "verdict", "reasons", "warning", "riskDescription"]
         }
       }
     });
@@ -282,7 +286,7 @@ export default function App() {
                     "bg-surface-container-lowest border-l-4 p-5 rounded-md mb-6",
                     result.verdict === "Suspicious" ? "border-tertiary" : "border-primary"
                   )}>
-                    <div className="flex gap-3">
+                    <div className="flex gap-3 mb-3">
                       {result.verdict === "Suspicious" ? (
                         <ShieldAlert className="w-5 h-5 text-tertiary shrink-0" />
                       ) : (
@@ -292,6 +296,9 @@ export default function App() {
                         {result.warning}
                       </p>
                     </div>
+                    <p className="text-xs text-on-surface-variant leading-relaxed opacity-90">
+                      {result.riskDescription}
+                    </p>
                   </div>
 
                   {/* Reasons */}
