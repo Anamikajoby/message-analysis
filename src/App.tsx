@@ -40,6 +40,7 @@ interface Detection {
 // --- Gemini Service ---
 
 const getApiKey = () => {
+  // Check process.env (injected by Vite define) or import.meta.env
   return process.env.GEMINI_API_KEY || "";
 };
 
