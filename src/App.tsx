@@ -38,42 +38,40 @@ interface Detection {
 
 // --- Gemini Service ---
 
-function extractJson(text: string) {
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  return jsonMatch ? jsonMatch[0] : text;
-}
+const getApiKey = () => {
+  return process.env.GEMINI_API_KEY || "";
+};
 
 async function analyzeMessage(message: string, contacts?: string): Promise<AnalysisResult> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
-    throw new Error("GEMINI_API_KEY is missing or invalid. Please configure it in the Secrets panel.");
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    return {
+      riskScore: 50,
+      verdict: "Suspicious",
+      reasons: ["API Key missing. Please configure GEMINI_API_KEY in your environment."],
+      warning: "Analysis is currently unavailable because the Gemini API key is not configured.",
+      insight: "Configuration Error"
+    };
   }
 
   const ai = new GoogleGenAI({ apiKey });
-
   const prompt = `
-    Analyze the following content and determine if it is a SAFE message, a PHISHING attempt, or GIBBERISH/NON-MESSAGE content.
+    Analyze the following message and determine whether it is SAFE or a PHISHING attempt.
+    Be neutral and unbiased. Do NOT assume the message is phishing. Only classify as "Suspicious" if there are clear signs.
     
     User Context:
     Known Contacts: ${contacts || "None provided"}
     
-    Content to Analyze:
-    """
+    Message:
     ${message}
-    """
     
-    Guidelines:
-    1. If the content is gibberish, random characters, or clearly not a message/email, return a low riskScore (0-10) and verdict "Safe", and explicitly state "Non-message content detected" in the reasons.
-    2. If it is a message, analyze for phishing signals (urgency, suspicious links, sender mismatch).
-    3. Be neutral and unbiased.
-    
-    Return output strictly in JSON format:
+    Return output strictly in JSON:
     {
       "riskScore": number (0-100),
       "verdict": "Safe" or "Suspicious",
       "reasons": ["reason1", "reason2"],
-      "warning": "Clear explanation for the user",
-      "insight": "Technical pattern name (e.g., 'Gibberish Detected', 'Whaling', etc.)"
+      "warning": "Explain clearly why this is safe or suspicious for this specific user",
+      "insight": "A short, technical insight about the pattern detected (e.g., 'Whaling', 'Credential Harvesting', etc.)"
     }
   `;
 
@@ -83,15 +81,23 @@ async function analyzeMessage(message: string, contacts?: string): Promise<Analy
       contents: prompt,
       config: {
         responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            riskScore: { type: Type.NUMBER },
+            verdict: { type: Type.STRING },
+            reasons: { type: Type.ARRAY, items: { type: Type.STRING } },
+            warning: { type: Type.STRING },
+            insight: { type: Type.STRING }
+          },
+          required: ["riskScore", "verdict", "reasons", "warning"]
+        }
       }
     });
 
-    const text = response.text;
-    if (!text) throw new Error("Empty response from AI");
-    
-    return JSON.parse(extractJson(text));
+    return JSON.parse(response.text);
   } catch (error) {
-    console.error("Detailed Analysis Error:", error);
+    console.error("Analysis failed:", error);
     throw error;
   }
 }
@@ -128,8 +134,7 @@ export default function App() {
       };
       setRecentDetections(prev => [newDetection, ...prev.slice(0, 2)]);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
-      alert(`Analysis failed: ${errorMessage}`);
+      alert("Analysis failed. Please check console for details.");
     } finally {
       setIsAnalyzing(false);
     }
